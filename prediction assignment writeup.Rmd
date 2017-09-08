@@ -1,0 +1,114 @@
+---
+title: "Prediction Assignment Writeup"
+author: "qi"
+date: "2017/9/7"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = F, message = F)
+```
+
+##Introduction
+
+The development of wearable devices help people collect large amounts of data about personal activities, like Jawbone Up, Nike Fuelband and Fitbit. In this project, our goal is to qualify the performance of people's activities, which were recorded by wearable devices.
+
+## Data Source
+
+The data for this project is from website: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+train data: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+test data: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+## Data Exploration
+
+```{r}
+url1 <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+url2 <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+train <- read.csv(url1)
+test <- read.csv(url2)
+head(train)
+str(train)
+```
+
+## Prediction
+
+* Clean the data 
+```{r}
+library(caret)
+library(ggplot2)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+library(rpart)
+set.seed(101)
+inTrain <- createDataPartition(y = train$classe, p = 0.75, list = F)
+training <- train[inTrain,]
+testing <- train[-inTrain,]
+training <- training[,-nearZeroVar(training)]
+x <- sapply(training, function(x) mean(is.na(x))) > 0.95
+training <- training[,!x]
+training <- training[,-c(1:5)]
+str(training)
+```
+* See the correlation between different variables
+```{r}
+corMatrix <- cor(training[, -54])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+Dark points mean high correlations between variables. From the plot we can find that there are a little dark points, so we will not use pca to preprocess training data this time. 
+
+* Tree-Based Prediction
+```{r}
+set.seed(102)
+fit1 <- rpart(classe ~., data = training, method = "class")
+```
+```{r}
+rpart.plot(fit1)
+```
+We can use testing from train set to test our model fit1
+```{r}
+prediction1 <- predict(fit1, newdata = testing, type = "class")
+result1 <- confusionMatrix(prediction1, testing$classe)
+result1
+```
+
+* Generalized Boosted Model
+```{r, message = F, suppressMessages = T}
+set.seed(103)
+control_gbm <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+fit2 <- train(classe ~., data = training, method = "gbm", trControl = control_gbm, verbose = FALSE)
+```
+```{r}
+fit2$finalModel
+prediction2 <- predict(fit2, newdata = testing)
+result2<- confusionMatrix(prediction2, testing$classe)
+result2
+```
+
+* Random Forest Model
+```{r}
+set.seed(104)
+fit3 <- randomForest(classe ~., data = training, importance = TRUE, ntree = 100)
+```
+```{r}
+prediction3 <- predict(fit3, newdata = testing)
+result3 <- confusionMatrix(prediction3, testing$classe)
+result3
+```
+
+* Comparing Accuracy
+```{r}
+data.frame("tree-based" = result1$overall[1], "generalized boosted" = result2$overall[1], "random forest" = result3$overall[1])
+```
+From this form, we know that the random forest method has highest accuracy, and we will apply it to our test set.
+
+## Test
+
+```{r}
+prediction <- predict(fit3, newdata = test)
+prediction
+```
